@@ -1,0 +1,9 @@
+[submodule "components/bsec2"]
+	path = components/bsec2
+	url = https://github.com/mauriciobarroso/bsec2
+[submodule "components/bme68x_lib"]
+	path = components/bme68x_lib
+	url = https://github.com/mauriciobarroso/bme68x_lib
+[submodule "components/i2c_bus"]
+	path = components/i2c_bus
+	url = https://github.com/mauriciobarroso/i2c_bus
