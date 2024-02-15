@@ -1,9 +1,45 @@
 dependencies:
+  atanisoft/esp_lcd_touch_xpt2046:
+    component_hash: 54b143631d8caefeffe62d2193d2af5f90e45fcfda6d87382dce43e7d2ee95af
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.0.3
+  espressif/cmake_utilities:
+    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 0.5.3
+  espressif/esp_lcd_ili9341:
+    component_hash: c6b96c14fa22ab9b80251812f7dbd7dd1b255ccd68abb0cef97a276df711a4ec
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 2.0.0
+  espressif/esp_lcd_touch:
+    component_hash: d4d8f2dc33205797169a97a02e0d89a8982f59fe0509129b54422052b8522f59
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.1.1
+  espressif/esp_lvgl_port:
+    component_hash: d4288a8a1b1db92b62cef9fe1375ea216e5470e48fc7d752816161442f181758
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 2.0.0
   idf:
     component_hash: null
     source:
       type: idf
     version: 5.1.2
-manifest_hash: 72d2afb1e04bb0438d4a4a5c6b64f50bd67e393feb4370cee8a06e1364987031
+  lvgl/lvgl:
+    component_hash: da37debfb77b23833a71be7edcb36af7176d2b1d4896f5caa015fd912beb02d1
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 9.0.0
+manifest_hash: 1da94797a990bd5e6c18451dfdc43f3bac22e4eeb785d6c6b6e6e9592117cd58
 target: esp32s2
 version: 1.0.0
