@@ -1,10 +1,8 @@
-#include "bme68x_lib.h"
 #include "bsec2.h"
-#include "esp_err.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include <stdio.h>
+#include "esp_lvgl_port.h"
+
+#include "lcd.h"
 
 // Timeout for starting up USB CDC driver
 #define START_TIMEOUT_MS 5000
@@ -93,9 +91,37 @@ void bme680_task(void *param) {
   }
 }
 
+void ui_setup(lv_display_t *disp_handle) {
+  lvgl_port_lock(0);
+
+  lv_obj_t *scr = lv_disp_get_scr_act(disp_handle);
+  lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
+
+  lv_obj_t *label = lv_label_create(scr);
+  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_text(label, "Text");
+
+  lvgl_port_unlock();
+}
+
+void lcd_task(void *param) {
+  lv_display_t *disp_handle = NULL;
+  lcd_init(&disp_handle);
+
+  ui_setup(disp_handle);
+
+  while (true) {
+    vTaskDelay(pdMS_TO_TICKS(BME680_INTERVAL_MS));
+  }
+}
+
 void app_main(void) {
   // Timeout for starting up USB CDC driver
   vTaskDelay(pdMS_TO_TICKS(START_TIMEOUT_MS));
 
+  // Run bme680 task
   xTaskCreate(bme680_task, "bme680", 4096, NULL, tskIDLE_PRIORITY, NULL);
+
+  // Run lcd task
+  xTaskCreate(lcd_task, "lcd", 4096, NULL, tskIDLE_PRIORITY, NULL);
 }
