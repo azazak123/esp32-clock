@@ -2,7 +2,9 @@
 
 #include "esp_log.h"
 
+#include "esp_lcd_touch.h"
 #include "esp_lvgl_port.h"
+
 #include "lcd.h"
 #include "ui.h"
 
@@ -95,7 +97,9 @@ void bme680_task(void *param) {
 
 void lcd_task(void *param) {
   lv_display_t *disp_handle = NULL;
-  lcd_init(&disp_handle);
+  esp_lcd_touch_handle_t touch_handle;
+
+  lcd_init(&disp_handle, &touch_handle);
 
   ui_setup(disp_handle);
 

@@ -8,9 +8,14 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_types.h"
 
+#include "esp_lcd_touch_xpt2046.h"
+
 #include "esp_lvgl_port.h"
 
 #define TAG "LCD"
+
+#define LCD_HRES 320
+#define LCD_VRES 240
 
 #define SPI_SCLK_PIN 12
 #define SPI_MOSI_PIN 11
@@ -71,7 +76,8 @@ err:
 
 esp_err_t lvgl_init(esp_lcd_panel_io_handle_t *io_handle,
                     esp_lcd_panel_handle_t *panel_handle,
-                    lv_display_t **disp_handle) {
+                    lv_display_t **disp_handle,
+                    esp_lcd_touch_handle_t *touch_handle) {
   const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
   ESP_RETURN_ON_ERROR(lvgl_port_init(&lvgl_cfg), TAG,
                       "LGVL port was not initialized");
@@ -82,8 +88,8 @@ esp_err_t lvgl_init(esp_lcd_panel_io_handle_t *io_handle,
       .panel_handle = *panel_handle,
       .buffer_size = 320 * 16 * sizeof(uint16_t),
       .double_buffer = true,
-      .hres = 320,
-      .vres = 240,
+      .hres = LCD_HRES,
+      .vres = LCD_VRES,
       .monochrome = false,
       .rotation =
           {
@@ -99,20 +105,67 @@ esp_err_t lvgl_init(esp_lcd_panel_io_handle_t *io_handle,
   };
   *disp_handle = lvgl_port_add_disp(&disp_cfg);
 
-//   lv_display_set_flush_cb(*disp_handle, swap_bytes);
+  const lvgl_port_touch_cfg_t touch_cfg = {
+      .disp = *disp_handle,
+      .handle = *touch_handle,
+  };
+
+  lvgl_port_add_touch(&touch_cfg);
 
   return ESP_OK;
 }
 
-esp_err_t lcd_init(lv_display_t **disp_handle) {
+esp_err_t touch_init(esp_lcd_touch_handle_t *tp) {
+  ESP_LOGI(TAG, "Initialize SPI bus");
+  const spi_bus_config_t bus_config = {
+      .miso_io_num = 18,
+      .mosi_io_num = 33,
+      .sclk_io_num = 35,
+      .quadwp_io_num = -1,
+      .quadhd_io_num = -1,
+      .max_transfer_sz = ESP_LCD_TOUCH_SPI_CLOCK_HZ,
+  };
+  ESP_RETURN_ON_ERROR(
+      spi_bus_initialize(SPI3_HOST, &bus_config, SPI_DMA_CH_AUTO), TAG,
+      "SPI bus was not initialized");
+
+  esp_lcd_panel_io_handle_t tp_io_handle = NULL;
+  esp_lcd_panel_io_spi_config_t tp_io_config =
+      ESP_LCD_TOUCH_IO_SPI_XPT2046_CONFIG(16);
+  ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST,
+                                           &tp_io_config, &tp_io_handle));
+
+  esp_lcd_touch_config_t tp_cfg = {
+      .x_max = LCD_VRES,
+      .y_max = LCD_HRES,
+      .rst_gpio_num = -1,
+      .int_gpio_num = -1,
+      .flags =
+          {
+              .swap_xy = true,
+              .mirror_x = true,
+              .mirror_y = true,
+          },
+  };
+
+  ESP_LOGI(TAG, "Initialize touch controller XPT2046");
+  return esp_lcd_touch_new_spi_xpt2046(tp_io_handle, &tp_cfg, tp);
+}
+
+esp_err_t lcd_init(lv_disp_t **disp_handle,
+                   esp_lcd_touch_handle_t *touch_handle) {
   esp_lcd_panel_io_handle_t io_handle = NULL;
   esp_lcd_panel_handle_t panel_handle = NULL;
 
   ESP_RETURN_ON_ERROR(panel_init(&io_handle, &panel_handle), TAG,
                       "Panel was not initialized");
 
-  ESP_RETURN_ON_ERROR(lvgl_init(&io_handle, &panel_handle, disp_handle), TAG,
-                      "LVGL was not initialized");
+  ESP_RETURN_ON_ERROR(touch_init(touch_handle), TAG,
+                      "Touch was not initialized");
+
+  ESP_RETURN_ON_ERROR(
+      lvgl_init(&io_handle, &panel_handle, disp_handle, touch_handle), TAG,
+      "LVGL was not initialized");
 
   return ESP_OK;
 }
