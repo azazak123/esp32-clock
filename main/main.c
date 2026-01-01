@@ -1,10 +1,12 @@
 #include "bsec2.h"
 
+#include "bsec_datatypes.h"
 #include "esp_log.h"
 
 #include "esp_lcd_touch.h"
 #include "esp_lvgl_port.h"
 
+#include "bme680.h"
 #include "lcd.h"
 #include "ui.h"
 
@@ -29,6 +31,8 @@ bsec_sensor_t sensors[] = {
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
 };
 
+static bme680_state_t bme680_state;
+
 void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
                   bsec2_t bsec2) {
   for (uint8_t i = 0; i < outputs.n_outputs; i++) {
@@ -38,19 +42,25 @@ void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
     case BSEC_OUTPUT_STATIC_IAQ:
       printf("IAQ: %f\n", output.signal);
       printf("IAQ accuracy: %d\n", output.accuracy);
+      bme680_state.iaq = output.signal;
       break;
     case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
       printf("Temperature: %f\n", output.signal);
+      bme680_state.temp = output.signal;
       break;
     case BSEC_OUTPUT_RAW_PRESSURE:
       printf("Pressure: %f\n", output.signal);
+      bme680_state.pressure = output.signal;
       break;
     case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
       printf("Humidity: %f\n", output.signal);
+      bme680_state.humidity = output.signal;
       break;
     case BSEC_OUTPUT_GAS_PERCENTAGE:
       printf("Gas %%: %f\n", output.signal);
       printf("Gas accuracy: %d\n", output.accuracy);
+      bme680_state.gas = output.signal;
+      bme680_state.accuracy = output.accuracy;
       break;
     }
   }
@@ -101,9 +111,10 @@ void lcd_task(void *param) {
 
   lcd_init(&disp_handle, &touch_handle);
 
-  ui_setup(disp_handle);
+  ui_state_t state = ui_setup(disp_handle);
 
   while (true) {
+    ui_sensors_update(&state, &bme680_state);
     vTaskDelay(pdMS_TO_TICKS(BME680_INTERVAL_MS));
   }
 }
