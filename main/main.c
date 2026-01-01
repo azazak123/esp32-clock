@@ -10,6 +10,8 @@
 #include "lcd.h"
 #include "ui.h"
 
+#include "bsec_iaq.h"
+
 // Timeout for starting up USB CDC driver
 #define START_TIMEOUT_MS 5000
 
@@ -78,6 +80,9 @@ bool bme680_init(i2c_bus_t *i2c, bsec2_t *bs) {
   if (!result)
     return false;
 
+  bsec2_set_temperature_offset(bs, 2.5f);
+  bsec2_set_config(bs, bsec_config_iaq);
+  
   result = bsec2_update_subscription(bs, sensors, ARRAY_LEN(sensors),
                                      BME680_SAMPLE_RATE);
 
@@ -95,13 +100,13 @@ void bme680_task(void *param) {
   bool result = bme680_init(&i2c, &bs);
 
   if (!result) {
-    ESP_LOGE("BME680", "BME680 did not initialized");
-    return;
+    ESP_LOGE("BME680", "Init failed");
+    vTaskDelete(NULL);
   }
 
   while (true) {
     bsec2_run(&bs);
-    vTaskDelay(pdMS_TO_TICKS(BME680_INTERVAL_MS));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -124,8 +129,8 @@ void app_main(void) {
   vTaskDelay(pdMS_TO_TICKS(START_TIMEOUT_MS));
 
   // Run bme680 task
-  xTaskCreate(bme680_task, "bme680", 4096, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(bme680_task, "bme680", 4096, NULL, tskIDLE_PRIORITY + 2, NULL);
 
   // Run lcd task
-  xTaskCreate(lcd_task, "lcd", 4096, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(lcd_task, "lcd", 4096, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
