@@ -1,6 +1,7 @@
 #include "dashboard.h"
 
 #include "esp_log.h"
+#include "esp_lvgl_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdio.h>
@@ -66,18 +67,30 @@ static void dashboard_task_loop(void *param) {
 
   lcd_init(&disp_handle, &touch_handle);
 
-  ui_state_t ui_state = ui_setup(disp_handle);
+  ui_state_t ui_state;
+
+  if (lvgl_port_lock(0)) {
+    ui_state = ui_setup(disp_handle);
+    ui_state = ui_setup(disp_handle);
+    lvgl_port_unlock();
+  } else {
+    ESP_LOGE(TAG, "Failed to lock LVGL for setup");
+  }
 
   bme680_state_t sensor_data;
 
   while (true) {
     bme680_get_data(&sensor_data);
-    ui_sensors_update(&ui_state, &sensor_data);
 
-    update_time(&ui_state);
-    update_date(&ui_state);
+    if (lvgl_port_lock(0)) {
+      ui_sensors_update(&ui_state, &sensor_data);
 
-    update_battery(&ui_state);
+      update_time(&ui_state);
+      update_date(&ui_state);
+
+      update_battery(&ui_state);
+      lvgl_port_unlock();
+    }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
