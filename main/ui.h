@@ -2,7 +2,8 @@
 #define UI_H
 
 #include "lvgl.h"
-#include "bme680.h"
+
+#include "sensors_bme680.h"
 
 typedef struct {
     lv_obj_t *screen;
