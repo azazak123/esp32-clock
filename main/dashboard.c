@@ -71,7 +71,6 @@ static void dashboard_task_loop(void *param) {
 
   if (lvgl_port_lock(0)) {
     ui_state = ui_setup(disp_handle);
-    ui_state = ui_setup(disp_handle);
     lvgl_port_unlock();
   } else {
     ESP_LOGE(TAG, "Failed to lock LVGL for setup");

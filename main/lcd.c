@@ -152,7 +152,7 @@ esp_err_t touch_init(esp_lcd_touch_handle_t *tp) {
   return esp_lcd_touch_new_spi_xpt2046(tp_io_handle, &tp_cfg, tp);
 }
 
-esp_err_t lcd_init(lv_disp_t **disp_handle,
+esp_err_t lcd_init(lv_display_t **disp_handle,
                    esp_lcd_touch_handle_t *touch_handle) {
   esp_lcd_panel_io_handle_t io_handle = NULL;
   esp_lcd_panel_handle_t panel_handle = NULL;
