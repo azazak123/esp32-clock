@@ -64,6 +64,10 @@ void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
       bme680_state.gas = output.signal;
       bme680_state.accuracy = output.accuracy;
       break;
+    case BSEC_OUTPUT_CO2_EQUIVALENT:
+      printf("CO2 Equivalent: %f\n", output.signal);
+      bme680_state.co2 = output.signal;
+      break;
     }
   }
 };
@@ -80,7 +84,7 @@ bool bme680_init(i2c_bus_t *i2c, bsec2_t *bs) {
   if (!result)
     return false;
 
-  bsec2_set_temperature_offset(bs, 2.5f);
+  bsec2_set_temperature_offset(bs, 3.0f);
   bsec2_set_config(bs, bsec_config_iaq);
   
   result = bsec2_update_subscription(bs, sensors, ARRAY_LEN(sensors),

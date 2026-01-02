@@ -86,7 +86,7 @@ esp_err_t lvgl_init(esp_lcd_panel_io_handle_t *io_handle,
   const lvgl_port_display_cfg_t disp_cfg = {
       .io_handle = *io_handle,
       .panel_handle = *panel_handle,
-      .buffer_size = 320 * 16 * sizeof(uint16_t),
+      .buffer_size = 320 * 40 * sizeof(uint16_t),
       .double_buffer = true,
       .hres = LCD_HRES,
       .vres = LCD_VRES,

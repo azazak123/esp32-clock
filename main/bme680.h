@@ -4,11 +4,12 @@
 #include <stdint.h>
 
 typedef struct bme680_state_t {
-  float iaq;
-  float temp;
-  float pressure;
-  float humidity;
-  float gas;
+  float iaq;       
+  float temp;      
+  float pressure;  
+  float humidity;  
+  float gas;       
+  float co2;       
   uint8_t accuracy;
 } bme680_state_t;
 
