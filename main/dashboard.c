@@ -8,10 +8,12 @@
 #include <time.h>
 
 #include "lcd.h"
+#include "msg.h"
 #include "sensors_bme680.h"
 #include "ui.h"
 
 static const char *TAG = "DASHBOARD";
+static QueueHandle_t queue = NULL;
 
 static void update_time(ui_state_t *ui) {
   time_t now;
@@ -82,6 +84,22 @@ static void dashboard_task_loop(void *param) {
     bme680_get_data(&sensor_data);
 
     if (lvgl_port_lock(0)) {
+      msg_t msg;
+      if (xQueueReceive(queue, &msg, 0)) {
+        switch (msg.type) {
+        case MSG_DPP_URI_READY: {
+          char *uri_str = (char *)msg.data;
+          ui_show_dpp_qr(&ui_state, uri_str);
+          free(uri_str);
+          break;
+        }
+        case MSG_WIFI_CONNECTED:
+          ui_hide_dpp_qr(&ui_state);
+          break;
+        default:
+          break;
+        }
+      }
       ui_sensors_update(&ui_state, &sensor_data);
 
       update_time(&ui_state);
@@ -95,7 +113,9 @@ static void dashboard_task_loop(void *param) {
   }
 }
 
-bool dashboard_app_start(void) {
+bool dashboard_app_start(QueueHandle_t main_queue) {
+  queue = main_queue;
+
   BaseType_t res = xTaskCreate(dashboard_task_loop, "dashboard", 4096, NULL,
                                tskIDLE_PRIORITY + 1, NULL);
 

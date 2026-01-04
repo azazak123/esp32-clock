@@ -1,7 +1,7 @@
 #include "ui.h"
 #include "font/lv_font.h"
-#include "lv_conf_internal.h"
 #include <stdio.h>
+#include <string.h>
 
 LV_IMG_DECLARE(kitty_gif);
 
@@ -11,7 +11,7 @@ LV_FONT_DECLARE(lv_font_montserrat_20);
 LV_FONT_DECLARE(lv_font_montserrat_28);
 
 #define FONT_TINY &lv_font_montserrat_10
-#define FONT_SMALL &lv_font_montserrat_12
+#define FONT_SMALL &lv_font_montserrat_14
 #define FONT_MEDIUM &lv_font_montserrat_20
 #define FONT_LARGE &lv_font_montserrat_28
 
@@ -226,6 +226,8 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_style_text_font(ui.lbl_press_val, FONT_TINY, 0);
   lv_obj_set_style_text_color(ui.lbl_press_val, COLOR_TEXT_SEC, 0);
 
+  ui.qr_overlay = NULL;
+
   return ui;
 }
 
@@ -328,4 +330,58 @@ void ui_battery_update(ui_state_t *ui, int level_percent, bool is_charging) {
 
   lv_label_set_text_fmt(ui->lbl_bat, "%s %d%%", symbol, level_percent);
   lv_obj_set_style_text_color(ui->lbl_bat, color, 0);
+}
+
+static void dpp_qr_close_event_cb(lv_event_t * e) {
+    ui_state_t *ui = (ui_state_t *)lv_event_get_user_data(e);
+    
+    if (ui && ui->qr_overlay) {
+        lv_obj_delete(ui->qr_overlay);
+        ui->qr_overlay = NULL;
+    }
+}
+
+void ui_show_dpp_qr(ui_state_t *ui, const char *uri) {
+    if (!ui) return;
+    if (ui->qr_overlay != NULL) return;
+
+    ui->qr_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(ui->qr_overlay, 320, 240);
+    lv_obj_set_style_bg_color(ui->qr_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(ui->qr_overlay, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(ui->qr_overlay, 0, 0);
+    lv_obj_clear_flag(ui->qr_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    
+    lv_obj_add_event_cb(ui->qr_overlay, dpp_qr_close_event_cb, LV_EVENT_CLICKED, ui);
+
+    lv_obj_t *bg_card = lv_obj_create(ui->qr_overlay);
+    lv_obj_set_size(bg_card, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(bg_card, lv_color_black(), 0);
+    lv_obj_set_style_pad_all(bg_card, 10, 0);
+    lv_obj_center(bg_card);
+    
+    lv_obj_add_flag(bg_card, LV_OBJ_FLAG_EVENT_BUBBLE); 
+
+    lv_obj_t *qr = lv_qrcode_create(bg_card);
+    
+    lv_qrcode_set_size(qr, 200); 
+    lv_qrcode_set_dark_color(qr, lv_color_white());
+    lv_qrcode_set_light_color(qr, lv_color_black());
+
+    if (uri && strlen(uri) > 0) {
+        lv_result_t res = lv_qrcode_update(qr, uri, strlen(uri));
+        if (res != LV_RESULT_OK) {
+             lv_obj_delete(qr);
+             lv_obj_t *err_lbl = lv_label_create(bg_card);
+             lv_label_set_text(err_lbl, "QR Error");
+             lv_obj_set_style_text_color(err_lbl, lv_color_black(), 0);
+        }
+    }
+}
+
+void ui_hide_dpp_qr(ui_state_t *ui) {
+    if (!ui || !ui->qr_overlay) return;
+
+    lv_obj_delete(ui->qr_overlay);
+    ui->qr_overlay = NULL;
 }
