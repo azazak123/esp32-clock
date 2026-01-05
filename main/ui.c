@@ -5,12 +5,10 @@
 
 LV_IMG_DECLARE(kitty_gif);
 
-LV_FONT_DECLARE(lv_font_montserrat_10);
 LV_FONT_DECLARE(lv_font_montserrat_14);
 LV_FONT_DECLARE(lv_font_montserrat_20);
 LV_FONT_DECLARE(lv_font_montserrat_28);
 
-#define FONT_TINY &lv_font_montserrat_10
 #define FONT_SMALL &lv_font_montserrat_14
 #define FONT_MEDIUM &lv_font_montserrat_20
 #define FONT_LARGE &lv_font_montserrat_28
@@ -80,20 +78,20 @@ ui_state_t ui_setup(lv_display_t *display) {
 
   // 1. CLOCK
   ui.lbl_time = lv_label_create(row_top);
-  lv_label_set_text(ui.lbl_time, "12:00"); // Placeholder
+  lv_label_set_text(ui.lbl_time, "--:--");
   lv_obj_set_style_text_font(ui.lbl_time, FONT_LARGE, 0);
   lv_obj_set_style_text_color(ui.lbl_time, COLOR_ACCENT, 0);
   lv_obj_set_style_pad_left(ui.lbl_time, 2, 0);
 
   // 2. DATE
   ui.lbl_date = lv_label_create(row_top);
-  lv_label_set_text(ui.lbl_date, "Mon, 02 Jun"); // Placeholder
+  lv_label_set_text(ui.lbl_date, "---, -- ---");
   lv_obj_set_style_text_font(ui.lbl_date, FONT_SMALL, 0);
   lv_obj_set_style_text_color(ui.lbl_date, COLOR_TEXT_MAIN, 0);
 
   // 3. BATTERY
   ui.lbl_bat = lv_label_create(row_top);
-  lv_label_set_text(ui.lbl_bat, LV_SYMBOL_BATTERY_FULL " 100%");
+  lv_label_set_text(ui.lbl_bat, LV_SYMBOL_BATTERY_FULL " --%");
   lv_obj_set_style_text_font(ui.lbl_bat, FONT_SMALL, 0);
   lv_obj_set_style_text_color(ui.lbl_bat, COLOR_GOOD, 0);
 
@@ -223,7 +221,7 @@ ui_state_t ui_setup(lv_display_t *display) {
 
   ui.lbl_press_val = lv_label_create(cont_co2);
   lv_label_set_text(ui.lbl_press_val, "-- hPa");
-  lv_obj_set_style_text_font(ui.lbl_press_val, FONT_TINY, 0);
+  lv_obj_set_style_text_font(ui.lbl_press_val, FONT_SMALL, 0);
   lv_obj_set_style_text_color(ui.lbl_press_val, COLOR_TEXT_SEC, 0);
 
   ui.qr_overlay = NULL;
@@ -356,7 +354,7 @@ void ui_show_dpp_qr(ui_state_t *ui, const char *uri) {
 
     lv_obj_t *bg_card = lv_obj_create(ui->qr_overlay);
     lv_obj_set_size(bg_card, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(bg_card, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(bg_card, lv_color_white(), 0);
     lv_obj_set_style_pad_all(bg_card, 10, 0);
     lv_obj_center(bg_card);
     
@@ -365,8 +363,8 @@ void ui_show_dpp_qr(ui_state_t *ui, const char *uri) {
     lv_obj_t *qr = lv_qrcode_create(bg_card);
     
     lv_qrcode_set_size(qr, 200); 
-    lv_qrcode_set_dark_color(qr, lv_color_white());
-    lv_qrcode_set_light_color(qr, lv_color_black());
+    lv_qrcode_set_dark_color(qr, lv_color_black());
+    lv_qrcode_set_light_color(qr, lv_color_white());
 
     if (uri && strlen(uri) > 0) {
         lv_result_t res = lv_qrcode_update(qr, uri, strlen(uri));
