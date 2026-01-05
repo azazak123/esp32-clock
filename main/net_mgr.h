@@ -3,6 +3,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-void wifi_start(QueueHandle_t main_queue);
+
+bool net_mgr_start(QueueHandle_t _net_queue, QueueHandle_t _gui_queue);
 
 #endif

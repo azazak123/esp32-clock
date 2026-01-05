@@ -1,6 +1,5 @@
 #include "sensors_bme680.h"
 
-#include "driver/i2c.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -10,6 +9,7 @@
 #include "bsec2.h"
 #include "bsec_datatypes.h"
 #include "bsec_iaq.h"
+#include "msg.h"
 
 static const char *TAG = "BME680";
 
@@ -20,8 +20,9 @@ static const char *TAG = "BME680";
 
 #define BME680_SAMPLE_RATE BSEC_SAMPLE_RATE_LP
 
+static QueueHandle_t gui_queue = NULL;
+
 static bme680_state_t internal_state;
-static SemaphoreHandle_t data_mutex;
 static bsec2_t bsec_instance;
 static i2c_bus_t i2c_bus;
 
@@ -39,38 +40,44 @@ static void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
   if (outputs.n_outputs == 0)
     return;
 
-  if (xSemaphoreTake(data_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    for (uint8_t i = 0; i < outputs.n_outputs; i++) {
-      const bsec_data_t output = outputs.output[i];
+  for (uint8_t i = 0; i < outputs.n_outputs; i++) {
+    const bsec_data_t output = outputs.output[i];
 
-      switch (output.sensor_id) {
-      case BSEC_OUTPUT_STATIC_IAQ:
-        internal_state.iaq = output.signal;
-        internal_state.accuracy = output.accuracy;
-        break;
-      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
-        internal_state.temp = output.signal;
-        break;
-      case BSEC_OUTPUT_RAW_PRESSURE:
-        internal_state.pressure = output.signal;
-        break;
-      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
-        internal_state.humidity = output.signal;
-        break;
-      case BSEC_OUTPUT_GAS_PERCENTAGE:
-        internal_state.gas = output.signal;
-        break;
-      case BSEC_OUTPUT_CO2_EQUIVALENT:
-        internal_state.co2 = output.signal;
-        break;
-      }
+    switch (output.sensor_id) {
+    case BSEC_OUTPUT_STATIC_IAQ:
+      internal_state.iaq = output.signal;
+      internal_state.accuracy = output.accuracy;
+      break;
+    case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
+      internal_state.temp = output.signal;
+      break;
+    case BSEC_OUTPUT_RAW_PRESSURE:
+      internal_state.pressure = output.signal;
+      break;
+    case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
+      internal_state.humidity = output.signal;
+      break;
+    case BSEC_OUTPUT_GAS_PERCENTAGE:
+      internal_state.gas = output.signal;
+      break;
+    case BSEC_OUTPUT_CO2_EQUIVALENT:
+      internal_state.co2 = output.signal;
+      break;
     }
-    xSemaphoreGive(data_mutex);
-
-    ESP_LOGI(TAG, "T: %.1f, H: %.1f, IAQ: %.0f, Acc: %d", internal_state.temp,
-             internal_state.humidity, internal_state.iaq,
-             internal_state.accuracy);
   }
+
+  gui_msg_t msg;
+
+  msg.type = GUI_MSG_UPDATE_SENSORS;
+  msg.value.sensor_data = internal_state;
+
+  if (xQueueSend(gui_queue, &msg, 0) != pdTRUE) {
+    ESP_LOGE(TAG, "Queue full! Dropping sensor data");
+  }
+
+  ESP_LOGI(TAG, "T: %.1f, H: %.1f, IAQ: %.0f, Acc: %d", internal_state.temp,
+           internal_state.humidity, internal_state.iaq,
+           internal_state.accuracy);
 }
 
 static bool hw_init(void) {
@@ -106,10 +113,8 @@ static void bme680_task_loop(void *param) {
   }
 }
 
-bool bme680_start(void) {
-  data_mutex = xSemaphoreCreateMutex();
-  if (data_mutex == NULL)
-    return false;
+bool bme680_start(QueueHandle_t _gui_queue) {
+  gui_queue = _gui_queue;
 
   if (!hw_init())
     return false;
@@ -118,16 +123,4 @@ bool bme680_start(void) {
               NULL);
   ESP_LOGI(TAG, "Task started");
   return true;
-}
-
-void bme680_get_data(bme680_state_t *out_data) {
-  if (out_data == NULL)
-    return;
-
-  if (xSemaphoreTake(data_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-    *out_data = internal_state;
-    xSemaphoreGive(data_mutex);
-  } else {
-    ESP_LOGW(TAG, "Mutex timeout on read");
-  }
 }

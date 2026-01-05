@@ -13,7 +13,9 @@
 #include "ui.h"
 
 static const char *TAG = "DASHBOARD";
-static QueueHandle_t queue = NULL;
+
+static QueueHandle_t gui_queue = NULL;
+static QueueHandle_t net_queue = NULL;
 
 static void update_time(ui_state_t *ui) {
   time_t now;
@@ -78,43 +80,42 @@ static void dashboard_task_loop(void *param) {
     ESP_LOGE(TAG, "Failed to lock LVGL for setup");
   }
 
-  bme680_state_t sensor_data;
-
   while (true) {
-    bme680_get_data(&sensor_data);
-
     if (lvgl_port_lock(0)) {
-      msg_t msg;
-      if (xQueueReceive(queue, &msg, 0)) {
+      gui_msg_t msg;
+      if (xQueueReceive(gui_queue, &msg, 0)) {
         switch (msg.type) {
-        case MSG_DPP_URI_READY: {
-          char *uri_str = (char *)msg.data;
+        case GUI_MSG_SHOW_QR: {
+          char *uri_str = (char *)msg.value.text_data;
           ui_show_dpp_qr(&ui_state, uri_str);
           free(uri_str);
           break;
         }
-        case MSG_WIFI_CONNECTED:
+        case GUI_MSG_HIDE_QR:
           ui_hide_dpp_qr(&ui_state);
           break;
-        default:
+        case GUI_MSG_UPDATE_SENSORS: {
+          bme680_state_t sensor_data = msg.value.sensor_data;
+          ui_sensors_update(&ui_state, &sensor_data);
           break;
         }
+        }
       }
-      ui_sensors_update(&ui_state, &sensor_data);
 
       update_time(&ui_state);
       update_date(&ui_state);
-
       update_battery(&ui_state);
+
       lvgl_port_unlock();
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
-bool dashboard_app_start(QueueHandle_t main_queue) {
-  queue = main_queue;
+bool dashboard_app_start(QueueHandle_t _gui_queue, QueueHandle_t _net_queue) {
+  gui_queue = _gui_queue;
+  net_queue = _net_queue;
 
   BaseType_t res = xTaskCreate(dashboard_task_loop, "dashboard", 4096, NULL,
                                tskIDLE_PRIORITY + 1, NULL);

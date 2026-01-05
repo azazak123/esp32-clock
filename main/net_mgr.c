@@ -1,6 +1,7 @@
 #include "esp_dpp.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -9,16 +10,18 @@
 
 #define DPP_LISTEN_CHANNEL_LIST "6"
 #define DPP_DEVICE_INFO "ESP32-Clock"
-#define DPP_BOOTSTRAP_KEY NULL
 
-#define CURVE_SEC256R1_PKEY_HEX_DIGITS 64
+#define TIMEZONE "EET-2EEST,M3.5.0/3,M10.5.0/4"
 
-static QueueHandle_t queue = NULL;
+static QueueHandle_t gui_queue = NULL;
+static QueueHandle_t net_queue = NULL;
 
-static const char *TAG = "wifi dpp-enrollee";
+static const char *TAG = "NET_MGR";
 wifi_config_t s_dpp_wifi_config;
 
-static int s_retry_num = 0;
+static bool s_is_dpp_active = false;
+
+static int s_retry_num = 2;
 
 static TaskHandle_t s_dpp_task_handle = NULL;
 
@@ -31,14 +34,43 @@ typedef enum {
 
 #define WIFI_MAX_RETRY_NUM 3
 
+static void sync_time(void) {
+  ESP_LOGI(TAG, "Initializing SNTP...");
+
+  esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+
+  esp_netif_sntp_init(&config);
+
+  if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to update system time within 10s timeout");
+  } else {
+    setenv("TZ", TIMEZONE, 1);
+    tzset();
+
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    ESP_LOGI(TAG, "Time synced: %02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+  }
+
+  esp_netif_sntp_deinit();
+}
+
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT) {
     switch (event_id) {
-    case WIFI_EVENT_STA_START:
-      ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
-      ESP_LOGI(TAG, "Started listening for DPP Authentication");
+    case WIFI_EVENT_STA_START: {
+      if (s_is_dpp_active) {
+        ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
+        ESP_LOGI(TAG, "Started listening for DPP Authentication");
+      } else {
+        ESP_LOGI(TAG, "WiFi config found, connecting to AP...");
+        esp_wifi_connect();
+      }
       break;
+    }
     case WIFI_EVENT_STA_DISCONNECTED:
       if (s_retry_num < WIFI_MAX_RETRY_NUM) {
         esp_wifi_connect();
@@ -53,28 +85,22 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       ESP_LOGI(TAG, "Successfully connected to the AP ssid : %s ",
                s_dpp_wifi_config.sta.ssid);
 
-      msg_t msg;
-      msg.type = MSG_WIFI_CONNECTED;
-
-      if (xQueueSend(queue, &msg, 0) != pdTRUE) {
-        ESP_LOGE(TAG, "Queue full! Dropping QR code event");
-      }
+      sync_time();
 
       break;
     }
     case WIFI_EVENT_DPP_URI_READY: {
-      wifi_event_dpp_uri_ready_t *uri_data = event_data;
-      if (uri_data != NULL) {
-        ESP_LOGI(TAG, "Scan below QR Code to configure the enrollee:");
-
-        msg_t msg;
-        msg.type = MSG_DPP_URI_READY;
-
-        msg.data = strdup(uri_data->uri);
-
-        if (xQueueSend(queue, &msg, 0) != pdTRUE) {
-          ESP_LOGE(TAG, "Queue full! Dropping QR code event");
-          free(msg.data);
+      if (s_is_dpp_active) {
+        wifi_event_dpp_uri_ready_t *uri_data = event_data;
+        if (uri_data != NULL) {
+          ESP_LOGI(TAG, "Scan below QR Code to configure the enrollee:");
+          gui_msg_t msg;
+          msg.type = GUI_MSG_SHOW_QR;
+          msg.value.text_data = strdup(uri_data->uri);
+          if (xQueueSend(gui_queue, &msg, 0) != pdTRUE) {
+            ESP_LOGE(TAG, "Queue full! Dropping QR code event");
+            free(msg.value.text_data);
+          }
         }
       }
       break;
@@ -107,7 +133,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   }
   if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-    ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+    ESP_LOGI(TAG, "Got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     s_retry_num = 0;
     xTaskNotify(s_dpp_task_handle, DPP_STATUS_CONNECTED,
                 eSetValueWithOverwrite);
@@ -127,7 +153,7 @@ esp_err_t dpp_enrollee_bootstrap(void) {
   return ret;
 }
 
-void dpp_init(void *param) {
+void net_init() {
 
   xTaskNotifyStateClear(NULL);
   s_dpp_task_handle = xTaskGetCurrentTaskHandle();
@@ -146,6 +172,21 @@ void dpp_init(void *param) {
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+  wifi_config_t current_conf;
+  esp_wifi_get_config(WIFI_IF_STA, &current_conf);
+
+  if (strlen((const char *)current_conf.sta.ssid) > 0) {
+    ESP_LOGI(TAG, "Saved configuration found for SSID: %s",
+             current_conf.sta.ssid);
+    s_is_dpp_active = false;
+  } else {
+    ESP_LOGW(TAG, "No saved configuration found. Starting DPP (QR Code)...");
+    s_is_dpp_active = true;
+    ESP_ERROR_CHECK(esp_supp_dpp_init(NULL));
+    ESP_ERROR_CHECK(dpp_enrollee_bootstrap());
+  }
+
   ESP_ERROR_CHECK(esp_supp_dpp_init(NULL));
   ESP_ERROR_CHECK(dpp_enrollee_bootstrap());
   ESP_ERROR_CHECK(esp_wifi_start());
@@ -172,11 +213,32 @@ void dpp_init(void *param) {
                                                &event_handler));
   ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                &event_handler));
-  vTaskDelete(NULL);
 }
 
-void wifi_start(QueueHandle_t main_queue) {
-  queue = main_queue;
-  xTaskCreate(dpp_init, "dpp_init", 4096, NULL, tskIDLE_PRIORITY + 2, NULL);
+void net_mgr_task(void *param) {
+  net_init();
+
+  while (true) {
+    net_msg_t msg;
+
+    if (xQueueReceive(net_queue, &msg, 0)) {
+      switch (msg.type) {
+      case NET_MSG_INIT_WIFI:
+        net_init();
+        break;
+      case NET_MSG_SYNC_TIME:
+        sync_time();
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
 }
 
+bool net_mgr_start(QueueHandle_t _net_queue, QueueHandle_t _gui_queue) {
+  net_queue = _net_queue;
+  gui_queue = _gui_queue;
+  xTaskCreate(net_mgr_task, "net_mgr_task", 4096, NULL, tskIDLE_PRIORITY + 2,
+              NULL);
+  ESP_LOGI(TAG, "Task started");
+  return true;
+}

@@ -7,7 +7,7 @@
 #include "nvs_flash.h"
 #include "sensors_bme680.h"
 #include "msg.h"
-#include "wifi.h"
+#include "net_mgr.h"
 
 // Timeout for starting up USB CDC driver
 #define START_TIMEOUT_MS 5000
@@ -24,18 +24,25 @@ void app_main(void) {
   }
   ESP_ERROR_CHECK(ret);
 
-  QueueHandle_t queue = xQueueCreate(10, sizeof(msg_t));
-  if (queue == NULL) {
+  QueueHandle_t gui_queue = xQueueCreate(10, sizeof(gui_msg_t));
+  if (gui_queue == NULL) {
+    ESP_LOGE("MAIN", "Failed to create queue");
+  }
+  
+  QueueHandle_t net_mgr_queue = xQueueCreate(10, sizeof(net_msg_t));
+  if (net_mgr_queue == NULL) {
     ESP_LOGE("MAIN", "Failed to create queue");
   }
 
-  wifi_start(queue);
+  if (!net_mgr_start(gui_queue, net_mgr_queue)) {
+    ESP_LOGE("MAIN", "Dashboard Init Failed!");
+  }
 
-  if (!bme680_start()) {
+  if (!bme680_start(gui_queue)) {
     ESP_LOGE("MAIN", "Sensors Init Failed!");
   }
 
-  if (!dashboard_app_start(queue)) {
+  if (!dashboard_app_start(gui_queue, net_mgr_queue)) {
     ESP_LOGE("MAIN", "Dashboard Init Failed!");
   }
 
