@@ -31,7 +31,7 @@ typedef struct {
     lv_obj_t *qr_overlay;
 } ui_state_t;
 
-ui_state_t ui_setup(lv_display_t *display);
+ui_state_t ui_setup(lv_display_t *display, lv_event_cb_t long_press_cb);
 void ui_sensors_update(ui_state_t *ui, const bme680_state_t *data);
 void ui_clock_update(ui_state_t *ui, const char *time_str);
 void ui_date_update(ui_state_t *ui, const char *date_str);

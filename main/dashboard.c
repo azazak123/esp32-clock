@@ -17,6 +17,17 @@ static const char *TAG = "DASHBOARD";
 static QueueHandle_t gui_queue = NULL;
 static QueueHandle_t net_queue = NULL;
 
+static void long_press_handler(lv_event_t *e) {
+  ESP_LOGI(TAG, "Long press detected");
+
+  net_msg_t msg;
+  msg.type = NET_MSG_INIT_WIFI;
+  
+  if (xQueueSend(net_queue, &msg, 0) != pdTRUE) {
+    ESP_LOGE(TAG, "ERROR: Queue is FULL or Failed to send!");
+  }
+}
+
 static void update_time(ui_state_t *ui) {
   time_t now;
   struct tm timeinfo;
@@ -74,7 +85,7 @@ static void dashboard_task_loop(void *param) {
   ui_state_t ui_state;
 
   if (lvgl_port_lock(0)) {
-    ui_state = ui_setup(disp_handle);
+    ui_state = ui_setup(disp_handle, long_press_handler);
     lvgl_port_unlock();
   } else {
     ESP_LOGE(TAG, "Failed to lock LVGL for setup");

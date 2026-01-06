@@ -10,20 +10,29 @@
 
 #define DPP_LISTEN_CHANNEL_LIST "6"
 #define DPP_DEVICE_INFO "ESP32-Clock"
-
 #define TIMEZONE "EET-2EEST,M3.5.0/3,M10.5.0/4"
+#define MAX_RETRY_NUM 3
+
+const uint32_t SYNC_INTERVAL_MS = 4 * 3600 * 1000;
+
+static const char *TAG = "NET_MGR";
 
 static QueueHandle_t gui_queue = NULL;
 static QueueHandle_t net_queue = NULL;
-
-static const char *TAG = "NET_MGR";
-wifi_config_t s_dpp_wifi_config;
-
-static bool s_is_dpp_active = false;
-
-static int s_retry_num = 2;
-
 static TaskHandle_t s_dpp_task_handle = NULL;
+static wifi_config_t s_dpp_wifi_config;
+
+typedef struct {
+  bool is_system_init;
+  bool is_wifi_on;
+  bool is_dpp_active;
+  int retry_num;
+} net_mgr_state_t;
+
+static net_mgr_state_t s_state = {.is_system_init = false,
+                                  .is_wifi_on = false,
+                                  .is_dpp_active = false,
+                                  .retry_num = 0};
 
 typedef enum {
   DPP_STATUS_IDLE = 0,
@@ -32,26 +41,34 @@ typedef enum {
   DPP_STATUS_AUTH_FAIL     // = 3
 } dpp_status_t;
 
-#define WIFI_MAX_RETRY_NUM 3
-
 static void sync_time(void) {
   ESP_LOGI(TAG, "Initializing SNTP...");
 
   esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-
   esp_netif_sntp_init(&config);
 
-  if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to update system time within 10s timeout");
-  } else {
-    setenv("TZ", TIMEZONE, 1);
-    tzset();
+  uint8_t retry = 0;
 
-    time_t now;
-    struct tm timeinfo;
-    time(&now);
-    localtime_r(&now, &timeinfo);
-    ESP_LOGI(TAG, "Time synced: %02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+  while (retry <= MAX_RETRY_NUM) {
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to update system time within 10s timeout");
+    } else {
+      setenv("TZ", TIMEZONE, 1);
+      tzset();
+
+      time_t now;
+      struct tm timeinfo;
+      time(&now);
+      localtime_r(&now, &timeinfo);
+      ESP_LOGI(TAG, "Time synced: %02d:%02d", timeinfo.tm_hour,
+               timeinfo.tm_min);
+      break;
+    }
+    retry += 1;
+  }
+
+  if (retry > MAX_RETRY_NUM) {
+    ESP_LOGE(TAG, "Failed to update system time");
   }
 
   esp_netif_sntp_deinit();
@@ -62,7 +79,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   if (event_base == WIFI_EVENT) {
     switch (event_id) {
     case WIFI_EVENT_STA_START: {
-      if (s_is_dpp_active) {
+      if (s_state.is_dpp_active) {
         ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
         ESP_LOGI(TAG, "Started listening for DPP Authentication");
       } else {
@@ -72,9 +89,10 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       break;
     }
     case WIFI_EVENT_STA_DISCONNECTED:
-      if (s_retry_num < WIFI_MAX_RETRY_NUM) {
+      if (s_state.retry_num < MAX_RETRY_NUM) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
         esp_wifi_connect();
-        s_retry_num++;
+        s_state.retry_num++;
         ESP_LOGI(TAG, "Disconnect event, retry to connect to the AP");
       } else {
         xTaskNotify(s_dpp_task_handle, DPP_STATUS_CONNECT_FAIL,
@@ -84,13 +102,10 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     case WIFI_EVENT_STA_CONNECTED: {
       ESP_LOGI(TAG, "Successfully connected to the AP ssid : %s ",
                s_dpp_wifi_config.sta.ssid);
-
-      sync_time();
-
       break;
     }
     case WIFI_EVENT_DPP_URI_READY: {
-      if (s_is_dpp_active) {
+      if (s_state.is_dpp_active) {
         wifi_event_dpp_uri_ready_t *uri_data = event_data;
         if (uri_data != NULL) {
           ESP_LOGI(TAG, "Scan below QR Code to configure the enrollee:");
@@ -108,23 +123,22 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     case WIFI_EVENT_DPP_CFG_RECVD: {
       wifi_event_dpp_config_received_t *config = event_data;
       memcpy(&s_dpp_wifi_config, &config->wifi_cfg, sizeof(s_dpp_wifi_config));
-      s_retry_num = 0;
+      s_state.retry_num = 0;
       esp_wifi_set_config(ESP_IF_WIFI_STA, &s_dpp_wifi_config);
       esp_wifi_connect();
       break;
     }
     case WIFI_EVENT_DPP_FAILED: {
       wifi_event_dpp_failed_t *dpp_failure = event_data;
-      if (s_retry_num < 5) {
+      if (s_state.retry_num < MAX_RETRY_NUM) {
         ESP_LOGI(TAG, "DPP Auth failed (Reason: %s), retry...",
                  esp_err_to_name((int)dpp_failure->failure_reason));
         ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
-        s_retry_num++;
+        s_state.retry_num++;
       } else {
         xTaskNotify(s_dpp_task_handle, DPP_STATUS_AUTH_FAIL,
                     eSetValueWithOverwrite);
       }
-
       break;
     }
     default:
@@ -134,7 +148,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "Got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-    s_retry_num = 0;
+    s_state.retry_num = 0;
     xTaskNotify(s_dpp_task_handle, DPP_STATUS_CONNECTED,
                 eSetValueWithOverwrite);
   }
@@ -153,15 +167,42 @@ esp_err_t dpp_enrollee_bootstrap(void) {
   return ret;
 }
 
-void net_init() {
+void stop_wifi(void) {
+  if (!s_state.is_wifi_on) {
+    ESP_LOGW(TAG, "Wi-Fi is already OFF");
+    return;
+  }
 
-  xTaskNotifyStateClear(NULL);
-  s_dpp_task_handle = xTaskGetCurrentTaskHandle();
+  ESP_LOGI(TAG, "Stopping Wi-Fi...");
 
-  ESP_ERROR_CHECK(esp_netif_init());
+  gui_msg_t msg;
+  msg.type = GUI_MSG_HIDE_QR;
+  xQueueSend(gui_queue, &msg, 0);
 
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
-  esp_netif_create_default_wifi_sta();
+  if (s_state.is_dpp_active) {
+    esp_supp_dpp_stop_listen();
+    esp_supp_dpp_deinit();
+    s_state.is_dpp_active = false;
+  }
+
+  esp_wifi_disconnect();
+  esp_wifi_stop();
+  esp_wifi_deinit();
+
+  esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler);
+  esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler);
+
+  s_state.is_wifi_on = false;
+  ESP_LOGI(TAG, "Wi-Fi Stopped");
+}
+
+void start_wifi(bool use_saved_config) {
+  if (s_state.is_wifi_on) {
+    ESP_LOGW(TAG, "Wi-Fi is already ON, restarting...");
+    stop_wifi();
+  }
+
+  xTaskNotifyStateClear(s_dpp_task_handle);
 
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                              &event_handler, NULL));
@@ -170,66 +211,111 @@ void net_init() {
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+  s_state.retry_num = 0;
 
   wifi_config_t current_conf;
   esp_wifi_get_config(WIFI_IF_STA, &current_conf);
 
-  if (strlen((const char *)current_conf.sta.ssid) > 0) {
-    ESP_LOGI(TAG, "Saved configuration found for SSID: %s",
-             current_conf.sta.ssid);
-    s_is_dpp_active = false;
+  if (strlen((const char *)current_conf.sta.ssid) > 0 && use_saved_config) {
+    ESP_LOGI(TAG, "Config found: %s", current_conf.sta.ssid);
+    s_state.is_dpp_active = false;
   } else {
-    ESP_LOGW(TAG, "No saved configuration found. Starting DPP (QR Code)...");
-    s_is_dpp_active = true;
+    ESP_LOGW(TAG, "No config found. Starting DPP...");
+    s_state.is_dpp_active = true;
     ESP_ERROR_CHECK(esp_supp_dpp_init(NULL));
     ESP_ERROR_CHECK(dpp_enrollee_bootstrap());
   }
 
-  ESP_ERROR_CHECK(esp_supp_dpp_init(NULL));
-  ESP_ERROR_CHECK(dpp_enrollee_bootstrap());
   ESP_ERROR_CHECK(esp_wifi_start());
+  s_state.is_wifi_on = true;
 
-  /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or
-   * connection failed for the maximum number of re-tries (WIFI_FAIL_BIT). The
-   * bits are set by event_handler() (see above) */
   uint32_t status = DPP_STATUS_IDLE;
-
   xTaskNotifyWait(0x00, ULONG_MAX, &status, portMAX_DELAY);
 
   if (status == DPP_STATUS_CONNECTED) {
-  } else if (status == DPP_STATUS_CONNECT_FAIL) {
-    ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-             s_dpp_wifi_config.sta.ssid, s_dpp_wifi_config.sta.password);
-  } else if (status == DPP_STATUS_AUTH_FAIL) {
-    ESP_LOGI(TAG, "DPP Authentication failed after %d retries", s_retry_num);
-  } else {
-    ESP_LOGE(TAG, "UNEXPECTED EVENT");
-  }
+    ESP_LOGI(TAG, "Wi-Fi Connected Successfully");
 
-  esp_supp_dpp_deinit();
-  ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                               &event_handler));
-  ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                               &event_handler));
+    if (s_state.is_dpp_active) {
+      esp_supp_dpp_deinit();
+      s_state.is_dpp_active = false;
+      gui_msg_t msg_hide;
+      msg_hide.type = GUI_MSG_HIDE_QR;
+      xQueueSend(gui_queue, &msg_hide, 0);
+    }
+
+  } else {
+    ESP_LOGE(TAG, "Wi-Fi Connection Failed (Status: %lu)", status);
+    stop_wifi();
+  }
+}
+
+void net_init(void) {
+  if (s_state.is_system_init)
+    return;
+
+  ESP_ERROR_CHECK(esp_netif_init());
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  esp_netif_create_default_wifi_sta();
+
+  s_state.is_system_init = true;
+  ESP_LOGI(TAG, "System Netif Initialized");
 }
 
 void net_mgr_task(void *param) {
+  s_dpp_task_handle = xTaskGetCurrentTaskHandle();
+
+  TickType_t last_sync_time = xTaskGetTickCount();
+
   net_init();
 
-  while (true) {
-    net_msg_t msg;
+  net_msg_t init_msg;
+  init_msg.type = NET_MSG_SYNC_TIME;
+  xQueueSend(net_queue, &init_msg, 0);
 
+  ESP_LOGI(TAG, "Net Manager Loop Started");
+
+  while (true) {
+    if (xTaskGetTickCount() - last_sync_time >
+        pdMS_TO_TICKS(SYNC_INTERVAL_MS)) {
+      net_msg_t timer_msg;
+      timer_msg.type = NET_MSG_SYNC_TIME;
+      xQueueSend(net_queue, &timer_msg, 0);
+      last_sync_time = xTaskGetTickCount();
+    }
+
+    net_msg_t msg;
     if (xQueueReceive(net_queue, &msg, 0)) {
+      ESP_LOGI(TAG, "Received MSG: %d", msg.type);
+
       switch (msg.type) {
       case NET_MSG_INIT_WIFI:
-        net_init();
+        if (s_state.is_wifi_on) {
+          stop_wifi();
+        }
+        start_wifi(false);
+        if (s_state.is_wifi_on) {
+          sync_time();
+          stop_wifi();
+        }
         break;
+
       case NET_MSG_SYNC_TIME:
-        sync_time();
+        if (s_state.is_wifi_on) {
+          sync_time();
+        } else {
+          ESP_LOGW(TAG, "Cannot sync time: Wi-Fi is OFF. Enabling...");
+          start_wifi(true);
+          if (s_state.is_wifi_on) {
+            sync_time();
+            stop_wifi();
+          }
+        }
+        break;
       }
     }
+
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }

@@ -34,7 +34,7 @@ void app_main(void) {
     ESP_LOGE("MAIN", "Failed to create queue");
   }
 
-  if (!net_mgr_start(gui_queue, net_mgr_queue)) {
+  if (!net_mgr_start(net_mgr_queue, gui_queue)) {
     ESP_LOGE("MAIN", "Dashboard Init Failed!");
   }
 
@@ -43,7 +43,7 @@ void app_main(void) {
   }
 
   if (!dashboard_app_start(gui_queue, net_mgr_queue)) {
-    ESP_LOGE("MAIN", "Dashboard Init Failed!");
+    ESP_LOGE("MAIN", "Net Mgr Init Failed!");
   }
 
   ESP_LOGI("MAIN", "All systems running.");
