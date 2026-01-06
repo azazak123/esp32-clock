@@ -1,17 +1,15 @@
 #include "ui.h"
 #include "font/lv_font.h"
-#include "lv_conf_internal.h"
 #include <stdio.h>
+#include <string.h>
 
 LV_IMG_DECLARE(kitty_gif);
 
-LV_FONT_DECLARE(lv_font_montserrat_10);
 LV_FONT_DECLARE(lv_font_montserrat_14);
 LV_FONT_DECLARE(lv_font_montserrat_20);
 LV_FONT_DECLARE(lv_font_montserrat_28);
 
-#define FONT_TINY &lv_font_montserrat_10
-#define FONT_SMALL &lv_font_montserrat_12
+#define FONT_SMALL &lv_font_montserrat_14
 #define FONT_MEDIUM &lv_font_montserrat_20
 #define FONT_LARGE &lv_font_montserrat_28
 
@@ -34,6 +32,7 @@ static lv_obj_t *create_card(lv_obj_t *parent) {
   lv_obj_set_style_radius(card, 8, 0);
   lv_obj_set_scrollbar_mode(card, LV_SCROLLBAR_MODE_OFF);
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_CLICKABLE);
   return card;
 }
 
@@ -47,7 +46,7 @@ static void style_text_value(lv_obj_t *lbl) {
   lv_obj_set_style_text_color(lbl, COLOR_TEXT_MAIN, 0);
 }
 
-ui_state_t ui_setup(lv_display_t *display) {
+ui_state_t ui_setup(lv_display_t *display, lv_event_cb_t long_press_cb) {
   ui_state_t ui;
 
   ui.screen = lv_obj_create(NULL);
@@ -55,6 +54,10 @@ ui_state_t ui_setup(lv_display_t *display) {
 
   lv_obj_set_scrollbar_mode(ui.screen, LV_SCROLLBAR_MODE_OFF);
   lv_obj_clear_flag(ui.screen, LV_OBJ_FLAG_SCROLLABLE);
+
+  if (long_press_cb != NULL) {
+      lv_obj_add_event_cb(ui.screen, long_press_cb, LV_EVENT_LONG_PRESSED, NULL);
+  }
 
   lv_screen_load(ui.screen);
 
@@ -72,6 +75,8 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_style_border_width(row_top, 0, 0);
   lv_obj_set_style_pad_all(row_top, 0, 0);
 
+  lv_obj_clear_flag(row_top, LV_OBJ_FLAG_CLICKABLE);
+
   lv_obj_set_flex_flow(row_top, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(row_top, LV_FLEX_ALIGN_SPACE_BETWEEN,
                         LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -80,20 +85,20 @@ ui_state_t ui_setup(lv_display_t *display) {
 
   // 1. CLOCK
   ui.lbl_time = lv_label_create(row_top);
-  lv_label_set_text(ui.lbl_time, "12:00"); // Placeholder
+  lv_label_set_text(ui.lbl_time, "--:--");
   lv_obj_set_style_text_font(ui.lbl_time, FONT_LARGE, 0);
   lv_obj_set_style_text_color(ui.lbl_time, COLOR_ACCENT, 0);
   lv_obj_set_style_pad_left(ui.lbl_time, 2, 0);
 
   // 2. DATE
   ui.lbl_date = lv_label_create(row_top);
-  lv_label_set_text(ui.lbl_date, "Mon, 02 Jun"); // Placeholder
+  lv_label_set_text(ui.lbl_date, "---, -- ---");
   lv_obj_set_style_text_font(ui.lbl_date, FONT_SMALL, 0);
   lv_obj_set_style_text_color(ui.lbl_date, COLOR_TEXT_MAIN, 0);
 
   // 3. BATTERY
   ui.lbl_bat = lv_label_create(row_top);
-  lv_label_set_text(ui.lbl_bat, LV_SYMBOL_BATTERY_FULL " 100%");
+  lv_label_set_text(ui.lbl_bat, LV_SYMBOL_BATTERY_FULL " --%");
   lv_obj_set_style_text_font(ui.lbl_bat, FONT_SMALL, 0);
   lv_obj_set_style_text_color(ui.lbl_bat, COLOR_GOOD, 0);
 
@@ -104,6 +109,7 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_style_radius(ui.gif_container, 8, 0);
   lv_obj_set_style_border_width(ui.gif_container, 0, 0);
   lv_obj_set_scrollbar_mode(ui.gif_container, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_clear_flag(ui.gif_container, LV_OBJ_FLAG_CLICKABLE);
 
   lv_obj_t *gif = lv_gif_create(ui.gif_container);
   lv_gif_set_src(gif, &kitty_gif);
@@ -119,6 +125,7 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_flex_flow(row_mid, LV_FLEX_FLOW_ROW);
   lv_obj_set_style_pad_gap(row_mid, 4, 0);
   lv_obj_set_scrollbar_mode(row_mid, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_clear_flag(row_mid, LV_OBJ_FLAG_CLICKABLE);
 
   // 1. Temperature
   lv_obj_t *card_temp = create_card(row_mid);
@@ -139,6 +146,7 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_style_arc_width(ui.arc_temp, 6, LV_PART_MAIN);
   lv_obj_set_style_arc_width(ui.arc_temp, 6, LV_PART_INDICATOR);
   lv_obj_set_style_arc_color(ui.arc_temp, COLOR_TEMP, LV_PART_INDICATOR);
+  lv_obj_clear_flag(ui.arc_temp, LV_OBJ_FLAG_CLICKABLE);
 
   ui.lbl_temp_val = lv_label_create(card_temp);
   lv_label_set_text(ui.lbl_temp_val, "--");
@@ -184,6 +192,7 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_flex_align(cont_iaq, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
   lv_obj_set_scrollbar_mode(cont_iaq, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_clear_flag(cont_iaq, LV_OBJ_FLAG_CLICKABLE);
 
   lv_obj_t *lbl_iaq_head = lv_label_create(cont_iaq);
   lv_label_set_text(lbl_iaq_head, "Air Quality");
@@ -212,6 +221,7 @@ ui_state_t ui_setup(lv_display_t *display) {
   lv_obj_set_flex_align(cont_co2, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
   lv_obj_set_scrollbar_mode(cont_co2, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_clear_flag(cont_co2, LV_OBJ_FLAG_CLICKABLE);
 
   lv_obj_t *lbl_co2_head = lv_label_create(cont_co2);
   lv_label_set_text(lbl_co2_head, "eCO2 (ppm)");
@@ -223,8 +233,10 @@ ui_state_t ui_setup(lv_display_t *display) {
 
   ui.lbl_press_val = lv_label_create(cont_co2);
   lv_label_set_text(ui.lbl_press_val, "-- hPa");
-  lv_obj_set_style_text_font(ui.lbl_press_val, FONT_TINY, 0);
+  lv_obj_set_style_text_font(ui.lbl_press_val, FONT_SMALL, 0);
   lv_obj_set_style_text_color(ui.lbl_press_val, COLOR_TEXT_SEC, 0);
+
+  ui.qr_overlay = NULL;
 
   return ui;
 }
@@ -328,4 +340,47 @@ void ui_battery_update(ui_state_t *ui, int level_percent, bool is_charging) {
 
   lv_label_set_text_fmt(ui->lbl_bat, "%s %d%%", symbol, level_percent);
   lv_obj_set_style_text_color(ui->lbl_bat, color, 0);
+}
+
+void ui_show_dpp_qr(ui_state_t *ui, const char *uri) {
+    if (!ui) return;
+    if (ui->qr_overlay != NULL) return;
+
+    ui->qr_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(ui->qr_overlay, 320, 240);
+    lv_obj_set_style_bg_color(ui->qr_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(ui->qr_overlay, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(ui->qr_overlay, 0, 0);
+    lv_obj_clear_flag(ui->qr_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    
+    lv_obj_t *bg_card = lv_obj_create(ui->qr_overlay);
+    lv_obj_set_size(bg_card, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(bg_card, lv_color_white(), 0);
+    lv_obj_set_style_pad_all(bg_card, 10, 0);
+    lv_obj_center(bg_card);
+    
+    lv_obj_add_flag(bg_card, LV_OBJ_FLAG_EVENT_BUBBLE); 
+
+    lv_obj_t *qr = lv_qrcode_create(bg_card);
+    
+    lv_qrcode_set_size(qr, 200); 
+    lv_qrcode_set_dark_color(qr, lv_color_black());
+    lv_qrcode_set_light_color(qr, lv_color_white());
+
+    if (uri && strlen(uri) > 0) {
+        lv_result_t res = lv_qrcode_update(qr, uri, strlen(uri));
+        if (res != LV_RESULT_OK) {
+             lv_obj_delete(qr);
+             lv_obj_t *err_lbl = lv_label_create(bg_card);
+             lv_label_set_text(err_lbl, "QR Error");
+             lv_obj_set_style_text_color(err_lbl, lv_color_black(), 0);
+        }
+    }
+}
+
+void ui_hide_dpp_qr(ui_state_t *ui) {
+    if (!ui || !ui->qr_overlay) return;
+
+    lv_obj_delete(ui->qr_overlay);
+    ui->qr_overlay = NULL;
 }
