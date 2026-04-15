@@ -131,10 +131,6 @@ static void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
   if (xQueueSend(gui_queue, &msg, 0) != pdTRUE) {
     ESP_LOGE(TAG, "Queue full! Dropping sensor data");
   }
-
-  ESP_LOGI(TAG, "T: %.1f, H: %.1f, IAQ: %.0f, Acc: %d", internal_state.temp,
-           internal_state.humidity, internal_state.iaq,
-           internal_state.accuracy);
 }
 
 static bool hw_init(void) {
