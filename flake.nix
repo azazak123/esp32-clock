@@ -15,7 +15,6 @@
           buildInputs = [
             esp-dev.packages.${system}.esp-idf-full
             pkgs.nixpkgs-fmt
-            # pkgs.clang-tools
             pkgs.udev
           ];
 

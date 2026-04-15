@@ -28,12 +28,15 @@ typedef struct {
     lv_obj_t *lbl_co2_val;
     lv_obj_t *lbl_press_val;
 
+    lv_obj_t *qr_overlay;
 } ui_state_t;
 
-ui_state_t ui_setup(lv_display_t *display);
+ui_state_t ui_setup(lv_display_t *display, lv_event_cb_t long_press_cb);
 void ui_sensors_update(ui_state_t *ui, const bme680_state_t *data);
 void ui_clock_update(ui_state_t *ui, const char *time_str);
 void ui_date_update(ui_state_t *ui, const char *date_str);
 void ui_battery_update(ui_state_t *ui, int level_percent, bool is_charging);
+void ui_show_dpp_qr(ui_state_t *ui, const char *uri);
+void ui_hide_dpp_qr(ui_state_t *ui);
 
 #endif

@@ -4,7 +4,6 @@
 #include "esp_log.h"
 
 #include "esp_lcd_ili9341.h"
-#include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_types.h"
 
@@ -17,9 +16,10 @@
 #define LCD_HRES 320
 #define LCD_VRES 240
 
+#define BUFFER_SIZE (320 * 24 * sizeof(uint16_t))
 #define SPI_SCLK_PIN 12
 #define SPI_MOSI_PIN 11
-#define SPI_MAX_TRANS_SZ 320 * 80 * 2
+#define SPI_MAX_TRANS_SZ BUFFER_SIZE
 
 #define SPI_PORT SPI2_HOST
 
@@ -86,7 +86,7 @@ esp_err_t lvgl_init(esp_lcd_panel_io_handle_t *io_handle,
   const lvgl_port_display_cfg_t disp_cfg = {
       .io_handle = *io_handle,
       .panel_handle = *panel_handle,
-      .buffer_size = 320 * 40 * sizeof(uint16_t),
+      .buffer_size = BUFFER_SIZE,
       .double_buffer = true,
       .hres = LCD_HRES,
       .vres = LCD_VRES,
@@ -123,10 +123,10 @@ esp_err_t touch_init(esp_lcd_touch_handle_t *tp) {
       .sclk_io_num = 35,
       .quadwp_io_num = -1,
       .quadhd_io_num = -1,
-      .max_transfer_sz = ESP_LCD_TOUCH_SPI_CLOCK_HZ,
+      .max_transfer_sz = 0,
   };
   ESP_RETURN_ON_ERROR(
-      spi_bus_initialize(SPI3_HOST, &bus_config, SPI_DMA_CH_AUTO), TAG,
+      spi_bus_initialize(SPI3_HOST, &bus_config, SPI_DMA_DISABLED), TAG,
       "SPI bus was not initialized");
 
   esp_lcd_panel_io_handle_t tp_io_handle = NULL;

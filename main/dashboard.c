@@ -8,10 +8,25 @@
 #include <time.h>
 
 #include "lcd.h"
+#include "msg.h"
 #include "sensors_bme680.h"
 #include "ui.h"
 
 static const char *TAG = "DASHBOARD";
+
+static QueueHandle_t gui_queue = NULL;
+static QueueHandle_t net_queue = NULL;
+
+static void long_press_handler(lv_event_t *e) {
+  ESP_LOGI(TAG, "Long press detected");
+
+  net_msg_t msg;
+  msg.type = NET_MSG_INIT_WIFI;
+  
+  if (xQueueSend(net_queue, &msg, 0) != pdTRUE) {
+    ESP_LOGE(TAG, "ERROR: Queue is FULL or Failed to send!");
+  }
+}
 
 static void update_time(ui_state_t *ui) {
   time_t now;
@@ -70,32 +85,49 @@ static void dashboard_task_loop(void *param) {
   ui_state_t ui_state;
 
   if (lvgl_port_lock(0)) {
-    ui_state = ui_setup(disp_handle);
+    ui_state = ui_setup(disp_handle, long_press_handler);
     lvgl_port_unlock();
   } else {
     ESP_LOGE(TAG, "Failed to lock LVGL for setup");
   }
 
-  bme680_state_t sensor_data;
-
   while (true) {
-    bme680_get_data(&sensor_data);
-
     if (lvgl_port_lock(0)) {
-      ui_sensors_update(&ui_state, &sensor_data);
+      gui_msg_t msg;
+      if (xQueueReceive(gui_queue, &msg, 0)) {
+        switch (msg.type) {
+        case GUI_MSG_SHOW_QR: {
+          char *uri_str = (char *)msg.value.text_data;
+          ui_show_dpp_qr(&ui_state, uri_str);
+          free(uri_str);
+          break;
+        }
+        case GUI_MSG_HIDE_QR:
+          ui_hide_dpp_qr(&ui_state);
+          break;
+        case GUI_MSG_UPDATE_SENSORS: {
+          bme680_state_t sensor_data = msg.value.sensor_data;
+          ui_sensors_update(&ui_state, &sensor_data);
+          break;
+        }
+        }
+      }
 
       update_time(&ui_state);
       update_date(&ui_state);
-
       update_battery(&ui_state);
+
       lvgl_port_unlock();
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
-bool dashboard_app_start(void) {
+bool dashboard_app_start(QueueHandle_t _gui_queue, QueueHandle_t _net_queue) {
+  gui_queue = _gui_queue;
+  net_queue = _net_queue;
+
   BaseType_t res = xTaskCreate(dashboard_task_loop, "dashboard", 4096, NULL,
                                tskIDLE_PRIORITY + 1, NULL);
 
