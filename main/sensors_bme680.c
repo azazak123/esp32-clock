@@ -10,6 +10,7 @@
 #include "bsec_datatypes.h"
 #include "bsec_iaq.h"
 #include "msg.h"
+#include "nvs.h"
 
 static const char *TAG = "BME680";
 
@@ -20,11 +21,14 @@ static const char *TAG = "BME680";
 
 #define BME680_SAMPLE_RATE BSEC_SAMPLE_RATE_LP
 
+#define STATE_SAVE_INTERVAL_MS (60 * 60 * 1000)
+
 static QueueHandle_t gui_queue = NULL;
 
 static bme680_state_t internal_state;
 static bsec2_t bsec_instance;
 static i2c_bus_t i2c_bus;
+static uint8_t bsec_state_buffer[BSEC_MAX_STATE_BLOB_SIZE];
 
 static bsec_sensor_t sensors_list[] = {
     BSEC_OUTPUT_STATIC_IAQ,
@@ -34,6 +38,59 @@ static bsec_sensor_t sensors_list[] = {
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
     BSEC_OUTPUT_CO2_EQUIVALENT,
 };
+
+static void load_bsec_state(bsec2_t *bsec) {
+  nvs_handle_t my_handle;
+  esp_err_t err;
+
+  err = nvs_open("bme680", NVS_READONLY, &my_handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Error opening NVS handle!");
+    return;
+  }
+
+  size_t required_size = BSEC_MAX_STATE_BLOB_SIZE;
+  err = nvs_get_blob(my_handle, "bsec_state", bsec_state_buffer, &required_size);
+
+  if (err == ESP_OK && required_size > 0 &&
+      required_size <= BSEC_MAX_STATE_BLOB_SIZE) {
+    if (bsec2_set_state(bsec, bsec_state_buffer)) {
+      ESP_LOGI(TAG, "BSEC state loaded from NVS successfully");
+    } else {
+      ESP_LOGE(TAG, "Failed to set BSEC state");
+    }
+  } else {
+    ESP_LOGI(TAG, "No valid BSEC state found in NVS (first run?)");
+  }
+
+  nvs_close(my_handle);
+}
+
+static void save_bsec_state(bsec2_t *bsec) {
+  nvs_handle_t my_handle;
+  esp_err_t err;
+  if (!bsec2_get_state(bsec, bsec_state_buffer)) {
+    ESP_LOGE(TAG, "Failed to get state from BSEC library");
+    return;
+  }
+
+  err = nvs_open("bme680", NVS_READWRITE, &my_handle);
+  if (err != ESP_OK)
+    return;
+
+  err = nvs_set_blob(my_handle, "bsec_state", bsec_state_buffer,
+                     BSEC_MAX_STATE_BLOB_SIZE);
+  if (err == ESP_OK) {
+    err = nvs_commit(my_handle);
+    if (err == ESP_OK) {
+      ESP_LOGI(TAG, "BSEC state saved to NVS");
+    }
+  } else {
+    ESP_LOGE(TAG, "Failed to write blob to NVS");
+  }
+
+  nvs_close(my_handle);
+}
 
 static void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
                          bsec2_t bsec2) {
@@ -93,8 +150,11 @@ static bool hw_init(void) {
     return false;
   }
 
-  bsec2_set_temperature_offset(&bsec_instance, 3.0f);
+  // TODO: Set after testing
+  // bsec2_set_temperature_offset(&bsec_instance, 3.0f);
   bsec2_set_config(&bsec_instance, bsec_config_iaq);
+
+  load_bsec_state(&bsec_instance);
 
   if (!bsec2_update_subscription(&bsec_instance, sensors_list,
                                  ARRAY_LEN(sensors_list), BME680_SAMPLE_RATE)) {
@@ -107,8 +167,19 @@ static bool hw_init(void) {
 }
 
 static void bme680_task_loop(void *param) {
+  TickType_t last_save_time = xTaskGetTickCount();
+
   while (true) {
     bsec2_run(&bsec_instance);
+
+    if (xTaskGetTickCount() - last_save_time >
+        pdMS_TO_TICKS(STATE_SAVE_INTERVAL_MS)) {
+      if (internal_state.accuracy >= 1) {
+        save_bsec_state(&bsec_instance);
+        last_save_time = xTaskGetTickCount();
+      }
+    }
+
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
