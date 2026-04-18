@@ -276,30 +276,20 @@ void net_mgr_task(void *param) {
   ESP_LOGI(TAG, "Net Manager Loop Started");
 
   while (true) {
-    if (xTaskGetTickCount() - last_sync_time >
-        pdMS_TO_TICKS(SYNC_INTERVAL_MS)) {
-      net_msg_t timer_msg;
-      timer_msg.type = NET_MSG_SYNC_TIME;
-      xQueueSend(net_queue, &timer_msg, 0);
-      last_sync_time = xTaskGetTickCount();
-    }
-
     net_msg_t msg;
-    if (xQueueReceive(net_queue, &msg, 0)) {
+
+    if (xQueueReceive(net_queue, &msg, pdMS_TO_TICKS(1000)) == pdTRUE) {
       ESP_LOGI(TAG, "Received MSG: %d", msg.type);
 
       switch (msg.type) {
       case NET_MSG_INIT_WIFI:
-        if (s_state.is_wifi_on) {
-          stop_wifi();
-        }
+        if (s_state.is_wifi_on) stop_wifi();
         start_wifi(false);
         if (s_state.is_wifi_on) {
           sync_time();
           stop_wifi();
         }
         break;
-
       case NET_MSG_SYNC_TIME:
         if (s_state.is_wifi_on) {
           sync_time();
@@ -315,7 +305,12 @@ void net_mgr_task(void *param) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    if (xTaskGetTickCount() - last_sync_time > pdMS_TO_TICKS(SYNC_INTERVAL_MS)) {
+      net_msg_t timer_msg;
+      timer_msg.type = NET_MSG_SYNC_TIME;
+      xQueueSend(net_queue, &timer_msg, 0);
+      last_sync_time = xTaskGetTickCount();
+    }
   }
 }
 

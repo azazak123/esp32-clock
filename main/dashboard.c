@@ -92,9 +92,12 @@ static void dashboard_task_loop(void *param) {
   }
 
   while (true) {
+    gui_msg_t msg;
+
+    bool has_msg = (xQueueReceive(gui_queue, &msg, pdMS_TO_TICKS(1000)) == pdTRUE);
+
     if (lvgl_port_lock(0)) {
-      gui_msg_t msg;
-      if (xQueueReceive(gui_queue, &msg, 0)) {
+      if (has_msg) {
         switch (msg.type) {
         case GUI_MSG_SHOW_QR: {
           char *uri_str = (char *)msg.value.text_data;
@@ -119,8 +122,6 @@ static void dashboard_task_loop(void *param) {
 
       lvgl_port_unlock();
     }
-
-    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
