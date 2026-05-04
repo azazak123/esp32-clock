@@ -119,6 +119,9 @@ static void dashboard_task_loop(void *param) {
           ui_sensors_update(&ui_state, &sensor_data);
           break;
         }
+        case GUI_MSG_SET_BRIGHTNESS:
+          lcd_set_brightness(msg.value.brightness);
+          break;
         }
       }
 
