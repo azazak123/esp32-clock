@@ -22,7 +22,7 @@ static void long_press_handler(lv_event_t *e) {
 
   net_msg_t msg;
   msg.type = NET_MSG_INIT_WIFI;
-  
+
   if (xQueueSend(net_queue, &msg, 0) != pdTRUE) {
     ESP_LOGE(TAG, "ERROR: Queue is FULL or Failed to send!");
   }
@@ -32,35 +32,41 @@ static void update_time(ui_state_t *ui) {
   time_t now;
   struct tm timeinfo;
   char time_buff[16];
+  static int last_minute = -1;
 
   time(&now);
   localtime_r(&now, &timeinfo);
 
-  snprintf(time_buff, sizeof(time_buff), "%02d:%02d", timeinfo.tm_hour,
-           timeinfo.tm_min);
-
-  ui_clock_update(ui, time_buff);
+  if (timeinfo.tm_min != last_minute) {
+    snprintf(time_buff, sizeof(time_buff), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+    ui_clock_update(ui, time_buff);
+    last_minute = timeinfo.tm_min;
+  }
 }
 
 static void update_date(ui_state_t *ui) {
   time_t now;
   struct tm timeinfo;
   char date_buff[32];
+  static int last_day = -1;
 
   time(&now);
   localtime_r(&now, &timeinfo);
 
-  static const char *week_days[] = {"Sun", "Mon", "Tue", "Wed",
-                                    "Thu", "Fri", "Sat"};
+  if (timeinfo.tm_mday != last_day) {
+    static const char *week_days[] = {"Sun", "Mon", "Tue", "Wed",
+                                      "Thu", "Fri", "Sat"};
 
-  static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
-  snprintf(date_buff, sizeof(date_buff), "%s, %02d %s",
-           week_days[timeinfo.tm_wday], timeinfo.tm_mday,
-           months[timeinfo.tm_mon]);
+    snprintf(date_buff, sizeof(date_buff), "%s, %02d %s",
+             week_days[timeinfo.tm_wday], timeinfo.tm_mday,
+             months[timeinfo.tm_mon]);
 
-  ui_date_update(ui, date_buff);
+    ui_date_update(ui, date_buff);
+    last_day = timeinfo.tm_mday;
+  }
 }
 
 static void update_battery(ui_state_t *ui) {
