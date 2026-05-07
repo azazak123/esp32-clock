@@ -131,10 +131,6 @@ static void on_read_data(const bme68x_data_t data, const bsec_outputs_t outputs,
   if (xQueueSend(gui_queue, &msg, 0) != pdTRUE) {
     ESP_LOGE(TAG, "Queue full! Dropping sensor data");
   }
-
-  ESP_LOGI(TAG, "T: %.1f, H: %.1f, IAQ: %.0f, Acc: %d", internal_state.temp,
-           internal_state.humidity, internal_state.iaq,
-           internal_state.accuracy);
 }
 
 static bool hw_init(void) {
@@ -180,7 +176,14 @@ static void bme680_task_loop(void *param) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    int64_t curr_time_ns = bsec2_get_time_ms(&bsec_instance) * 1000000;
+    int64_t next_call_ns = bsec_instance.bme_conf.next_call;
+    uint32_t delay_ms = 100;
+    if (next_call_ns > curr_time_ns) {
+      delay_ms = (next_call_ns - curr_time_ns) / 1000000;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
   }
 }
 

@@ -7,6 +7,7 @@ typedef enum {
   GUI_MSG_SHOW_QR,
   GUI_MSG_HIDE_QR,
   GUI_MSG_UPDATE_SENSORS,
+  GUI_MSG_SET_BRIGHTNESS
 } gui_msg_type_t;
 
 typedef struct {
@@ -14,6 +15,7 @@ typedef struct {
   union {
     bme680_state_t sensor_data;
     char *text_data;
+    uint8_t brightness;
   } value;
 } gui_msg_t;
 
